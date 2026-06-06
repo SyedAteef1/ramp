@@ -1,0 +1,59 @@
+version: 1.0.0
+title: "ramp — diagnose a broken flow"
+description: "Correlate CloudWatch logs with code/config across services to find the root cause of a production break, fast."
+author:
+  contact: Syed Ateef
+
+# Parameters you pass at run time: ramp diagnose --params flow=upload
+parameters:
+  - key: flow
+    input_type: string
+    requirement: required
+    description: "The flow or service that broke (e.g. 'upload', 'synopsis', 'worker')."
+  - key: minutes_back
+    input_type: string
+    requirement: optional
+    default: "30"
+    description: "How far back to look in the logs. Keep small for speed; widen if empty."
+  - key: manifest
+    input_type: string
+    requirement: optional
+    default: "./ramp.yaml"
+    description: "Path to the topology manifest."
+
+# The agent's marching orders. The full method lives in prompts/diagnose_system.md.
+instructions: |
+  Diagnose why the "{{ flow }}" flow broke. Look back {{ minutes_back }} minutes.
+
+  Method:
+  0. WARM START (fast path): if `.ramp/index/system_flow.md` exists, READ IT FIRST plus the
+     relevant `.ramp/index/services/<name>.md` files. This is the pre-built understanding of
+     the system — it tells you the flow, the cross-service names that must match, and each
+     service's failure surfaces WITHOUT re-discovering anything. Use it and skip straight to
+     the logs. Only if there is NO index, fall back to reading the repos cold (and suggest the
+     user run `ramp index` so next time is fast).
+  1. Read the topology manifest at {{ manifest }}. Find the services in the "{{ flow }}" flow,
+     their log_groups, repos, key_vars, and known_failure_modes. Check known_failure_modes first.
+  2. For each suspect service, call get_recent_errors(log_group, {{ minutes_back }}) — errors first,
+     tight window, never dump whole logs.
+  3. Pull the concrete failing values from the errors (request id, collection name, table, S3 key).
+  4. Use search_value_across_groups(value, [the service log_groups]) to trace that value across
+     services and find where it diverged.
+  5. grep the relevant repo(s) for where that variable/config is set and used; compare code-expectation
+     vs log-reality.
+  6. Report: ONE-sentence root cause + evidence (exact log lines with timestamps + exact code/config
+     refs) + the one fix to try. Cite everything. If evidence is insufficient, say so and list the
+     next check — do not guess.
+
+  Be fast and grounded. You are read-only: never modify infrastructure or code.
+
+prompt: |
+  The "{{ flow }}" flow just broke. Diagnose the root cause now.
+
+extensions:
+  - type: stdio
+    name: ramp-cloudwatch
+    cmd: python3
+    args:
+      - "mcp/cloudwatch_logs_server.py"
+    timeout: 60

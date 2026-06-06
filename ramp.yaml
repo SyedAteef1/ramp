@@ -1,0 +1,49 @@
+# ramp.yaml — system topology manifest
+# Author: Syed Ateef
+#
+# Describe your distributed system ONCE. ramp uses this as the agent's context so that when
+# something breaks it knows WHERE to look, WHICH vars matter, and HOW services connect.
+#
+# This is wired to ../ramp-testbed (the toy api -> worker -> synopsis pipeline with the
+# planted collection-name bug). Only ever point ramp at infra you are authorized to debug.
+
+system: ramp-testbed-pipeline
+region: ap-south-1
+
+services:
+  - name: api
+    role: "API Lambda: accepts an upload, enqueues a job on SQS. Code: api.py"
+    repo: ~/personal-projects/ramp-testbed
+    log_group: /aws/lambda/ramp-api
+    key_vars:
+      QUEUE_URL: "SQS queue the API writes the job to"
+
+  - name: worker
+    role: "Worker Lambda: reads SQS, writes a result to a collection, invokes synopsis. Code: worker.py"
+    repo: ~/personal-projects/ramp-testbed/src
+    log_group: /aws/lambda/ramp-worker
+    key_vars:
+      WRITE_COLLECTION: "collection the worker writes results to (env: WRITE_COLLECTION)"
+      TABLE_NAME: "DynamoDB table (ramp-results)"
+      SYNOPSIS_FN: "the synopsis function it invokes"
+
+  - name: synopsis
+    role: "Synopsis Lambda: reads the cached result and generates a synopsis. Code: synopsis.py"
+    repo: ~/personal-projects/ramp-testbed/src
+    log_group: /aws/lambda/ramp-synopsis
+    key_vars:
+      READ_COLLECTION: "collection synopsis reads from (env: READ_COLLECTION) — MUST equal worker.WRITE_COLLECTION"
+      TABLE_NAME: "DynamoDB table (ramp-results)"
+
+connections:
+  - from: api
+    to: worker
+    via: "SQS (QUEUE_URL -> ramp-jobs)"
+  - from: worker
+    to: synopsis
+    via: "DynamoDB ramp-results + the collection name in the pk"
+
+known_failure_modes:
+  - "Collection mismatch: worker.WRITE_COLLECTION != synopsis.READ_COLLECTION → synopsis finds nothing and errors. (This is the planted bug: results_t vs results_c.)"
+  - "Job message missing fields → worker throws on parse."
+  - "Wrong TABLE_NAME between services → reads/writes hit different tables."

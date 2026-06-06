@@ -1,0 +1,30 @@
+version: 1.0.0
+title: "ramp — index the system (warm-up)"
+description: "NOT-URGENT path: crawl the repos and build a durable understanding of the system flow, stored under .ramp/index/, so incident-time diagnosis is instant."
+author:
+  contact: Syed Ateef
+
+parameters:
+  - key: manifest
+    input_type: string
+    requirement: optional
+    default: "./ramp.yaml"
+    description: "Path to the topology manifest."
+
+instructions: |
+  Build the system index (the warm-up, run when nothing is broken).
+
+  Read the topology manifest at {{ manifest }}. For each service and for the system as a
+  whole, read the actual repo code (cat/grep — never guess) and write durable summaries to:
+    - .ramp/index/system_flow.md         (end-to-end flow + every cross-service name that must match)
+    - .ramp/index/services/<name>.md     (role, key files, key vars + where set, what it logs, failure surfaces)
+    - .ramp/index/index.meta.yaml        (indexed_at + per-repo git commit, for staleness detection)
+
+  Emphasize the cross-service names (collection names, table names, queue/bucket names) that
+  MUST agree between services — those are the break points diagnosis will check first.
+
+  You are read-only and you do NOT call AWS here. This is repo understanding only.
+  Every claim must cite a real file you actually read.
+
+prompt: |
+  Index this system now. Build .ramp/index/ from the repos in the manifest.
